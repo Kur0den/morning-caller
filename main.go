@@ -15,13 +15,12 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // DBの構造体なのです
 type ReservedCall struct {
 	gorm.Model
-	calleeID	int				`gorm:"not null"`
+	CalleeID	int				`gorm:"not null"`
 	RunAt 		time.Time	`gorm:"not null;index"`
 }
 
@@ -99,6 +98,7 @@ func (app *Application) eventLoop() {
   defer sub.Cancel()
   slog.Info("イベントを待機しているのですよ")
 
+  pushedButtonsMaps := make(map[string][]string)
   for e := range sub.Events() {
     switch v := e.(type) {
     case *ari.StasisStart:
@@ -123,17 +123,71 @@ func (app *Application) eventLoop() {
 
     case *ari.ChannelDtmfReceived:
       digit := v.Digit
-      slog.Info("ボタンが押されたのですよ", "digit", digit)
+      // channelIDの履歴を呼び出すのです
+      pushedButtons := pushedButtonsMaps[v.Channel.ID]
+      slog.Info("ボタンが押されたのですよ", "channelID", v.Channel.ID,  "digit", digit)
+      pushedButtons = append(pushedButtons, digit)
+      
+      if len(pushedButtons) >= 4 {
+        slog.Debug("押されたボタンの確認なのです", "channelID", v.Channel.ID, "button0", pushedButtons[0],"button1", pushedButtons[1], "button2", pushedButtons[2],  "button3", pushedButtons[3], )
+        
+        // 入力された時間をintにするのです
+        hour, err := strconv.Atoi(pushedButtons[0] + pushedButtons[1])
+        if err != nil || hour < 0 || hour > 23 {
+          slog.Error("calleeからの時間入力がおかしかったみたいなのです", "channelID", v.Channel.ID, "errorPos", "Hour")
+          delete(pushedButtonsMaps, v.Channel.ID)
+          continue
+        } 
+        minute, err := strconv.Atoi(pushedButtons[2] + pushedButtons[3])
+        if err != nil || minute < 0 || minute > 59 {
+          slog.Error("calleeからの時間入力がおかしかったみたいなのです", "channelID", v.Channel.ID, "errorPos", "minute")
+          delete(pushedButtonsMaps, v.Channel.ID)
+          continue
+        }
+        
+        // intをtime.Timeに変換するのです
+        now := time.Now()
+        runAt := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, time.Local)
+        if runAt.Before(now) {
+          runAt = runAt.Add(24 * time.Hour)
+        }
+        
+        // TODO 他局からの接続時の挙動の確認をするのです
+        // TODO 他局からホップで接続された時の挙動を確認するのです
+        calleeID := 0
+        if v.Channel.Dialplan != nil {
+          id, err := strconv.Atoi(v.Channel.Dialplan.Exten) 
+          if err == nil {
+            calleeID = id
+          }
+        }
+        newCall := ReservedCall {
+          CalleeID: calleeID,
+          RunAt: runAt,
+        }
+        app.db.Create(&newCall)
+        slog.Info("DBにデータを保存したのですよ", "CalleeID", newCall.CalleeID, "RunAt", newCall.RunAt)
 
-      if digit == "9" {
-        slog.Info("9が押されたので、通話を切断するのですよ")
-        h := app.cl.Channel().Get(ari.NewKey(ari.ChannelKey, v.Channel.ID))
-				err := h.Hangup()
-				if err != nil {
-					slog.Error("Hungupに失敗しちゃったのです",  "error", err)
-				}
+        slog.Info("4回ボタンが押されたので通話を切断するのですよ")
+        app.Hangup(v.Channel.ID)
+        delete(pushedButtonsMaps, v.Channel.ID)
       }
+      
+      // channelIDの履歴を書き込むのです
+      pushedButtonsMaps[v.Channel.ID] = pushedButtons
+      
+      // if digit == "9" {
+      //   }
+      // }
     }
+  }
+}
+
+func (app *Application) Hangup(channelID string) {
+  h := app.cl.Channel().Get(ari.NewKey(ari.ChannelKey, channelID))
+  err := h.Hangup()
+  if err != nil {
+    slog.Error("Hungupに失敗しちゃったのです",  "error", err)
   }
 }
 
