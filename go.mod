@@ -16,6 +16,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/rotisserie/eris v0.5.4 // indirect
-	golang.org/x/net v0.42.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
