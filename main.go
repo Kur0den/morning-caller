@@ -147,7 +147,7 @@ func Originate(cl ari.Client, calleeID int) {
     CallerID: "\"ari-test\" <3001>",
   }
 
-  slog.Info("発信を開始するのですよ...")
+  slog.Info("新しく発信するのですよ", "endpoint", req.Endpoint)
   handle, err := cl.Channel().Originate(nil, req)
   if err != nil {
     slog.Error("発信に失敗しちゃったのです", "error", err)
